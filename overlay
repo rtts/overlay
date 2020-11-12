@@ -1,0 +1,75 @@
+#!/bin/bash -e
+
+if ! command -v pdflatex &> /dev/null
+then
+    cat << EOF > /dev/stderr
+
+A full LaTeX installation is required to use overlay, but it seems the
+command pdflatex is not available on your system! On Debian-based
+systems, you can install the required dependencies with the following
+command:
+
+    apt install texlive-latex-extra
+
+EOF
+    exit 1
+fi
+
+if [[ -z $2 ]]
+then
+    cat << EOF > /dev/stderr
+
+Usage: $0 <first-PDF-file> <second-PDF-file> [<output-PDF-file>]
+
+This will overlay the first PDF file onto every page of the second PDF
+file. The resulting file will be saved as <output-PDF-file>, if
+specified, or else sent to standard output.
+
+EOF
+    exit 1
+fi
+
+if [[ ! -s "$1" ]]
+then
+    echo "The file $1 does not exist or is empty!" > /dev/stderr
+    exit 1
+elif [[ ! -s "$2" ]]
+then
+    echo "The file $2 does not exist or is empty!" > /dev/stderr
+    exit 1
+fi
+
+tmpdir=$(mktemp -d)
+cp "$1" "$2" "$tmpdir/" &> /dev/stderr
+cat << EOF > "$tmpdir/overlay.tex"
+\documentclass[a4paper]{minimal}
+\usepackage{graphicx}
+\usepackage{pdfpages}
+\usepackage{background}
+\setlength{\unitlength}{1mm}
+\backgroundsetup{scale=1,angle=0, opacity=1,contents={%
+    \put(-105, 0){\includegraphics[width=\paperwidth,height=\paperheight]{$1}}
+  }%
+}
+\begin{document}
+\includepdf[pages=-]{$2}
+\end{document}
+EOF
+
+cd "$tmpdir"
+
+# Run twice, because the second run needs the overlay.aux file
+# produced by the first run #justlatexthings
+pdflatex -interaction nonstopmode overlay.tex &> /dev/stderr
+pdflatex -interaction nonstopmode overlay.tex &> /dev/stderr
+
+cd -
+
+if [[ -z "$3" ]]
+then
+    cat "$tmpdir/overlay.pdf"
+else
+    mv "$tmpdir/overlay.pdf" "$3"
+fi
+
+rm -r "$tmpdir" &> /dev/stderr
